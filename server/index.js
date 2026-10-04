@@ -1,6 +1,5 @@
 import 'node:process';
 import path from 'node:path';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 import express from 'express';
 import mysql from 'mysql2/promise';
@@ -12,8 +11,7 @@ import * as schema from '../db/schema.js';
 const isProduction = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT || 3000);
 const databaseUrl = process.env.DATABASE_URL || process.env.DRIZZLE_DATABASE_URL;
-if (!databaseUrl) throw new Error('DATABASE_URL is required to start Linguora Phase 3');
-
+if (!databaseUrl) throw new Error('DATABASE_URL is required to start LinguaEdu');
 await import('../db/migrate.js');
 const pool = mysql.createPool(databaseUrl);
 const db = drizzle(pool, { schema, mode: 'default' });
@@ -22,16 +20,15 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '3mb' }));
 
 const now = () => new Date();
-const normalizeEmail = (email = '') => email.trim().toLowerCase();
-const clean = (value = '') => String(value).trim();
+const clean = (value = '') => String(value ?? '').trim();
+const normalizeEmail = (email = '') => clean(email).toLowerCase();
 const randomId = () => crypto.randomBytes(32).toString('hex');
 const passwordHash = (password) => {
   const salt = crypto.randomBytes(16).toString('hex');
-  const derived = crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex');
-  return `${salt}:${derived}`;
+  return `${salt}:${crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex')}`;
 };
 const passwordMatches = (password, stored) => {
-  const [salt, expected] = String(stored).split(':');
+  const [salt, expected] = String(stored || '').split(':');
   if (!salt || !expected) return false;
   const actual = crypto.pbkdf2Sync(password, salt, 120000, 64, 'sha512').toString('hex');
   return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
@@ -40,8 +37,7 @@ const sanitizeUser = (user) => ({ id: user.id, role: user.role, username: user.u
 const cookieValue = (req, name) => (req.headers.cookie || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
 const setSession = async (res, userId) => {
   const token = randomId();
-  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30);
-  await db.insert(schema.sessions).values({ id: token, userId, expiresAt: expires, createdAt: now() });
+  await db.insert(schema.sessions).values({ id: token, userId, expiresAt: new Date(Date.now() + 2592000000), createdAt: now() });
   res.setHeader('Set-Cookie', `webdev_app_session=${token}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=2592000`);
 };
 const clearSession = async (req, res) => {
@@ -49,16 +45,13 @@ const clearSession = async (req, res) => {
   if (token) await db.delete(schema.sessions).where(eq(schema.sessions.id, token));
   res.setHeader('Set-Cookie', 'webdev_app_session=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0');
 };
-
 async function currentUser(req) {
   const token = cookieValue(req, 'webdev_app_session');
   if (!token) return null;
-  const sessionRows = await db.select().from(schema.sessions).where(and(eq(schema.sessions.id, token), sql`${schema.sessions.expiresAt} > NOW()`)).limit(1);
-  if (!sessionRows.length) return null;
-  const userRows = await db.select().from(schema.users).where(eq(schema.users.id, sessionRows[0].userId)).limit(1);
-  return userRows[0] || null;
+  const sessions = await db.select().from(schema.sessions).where(and(eq(schema.sessions.id, token), sql`${schema.sessions.expiresAt} > NOW()`)).limit(1);
+  if (!sessions.length) return null;
+  return (await db.select().from(schema.users).where(eq(schema.users.id, sessions[0].userId)).limit(1))[0] || null;
 }
-
 const requireAuth = (roles = []) => async (req, res, next) => {
   try {
     const user = await currentUser(req);
@@ -67,17 +60,14 @@ const requireAuth = (roles = []) => async (req, res, next) => {
     next();
   } catch (error) { next(error); }
 };
-
 function validatePassword(password) { return typeof password === 'string' && password.length >= 8; }
 function parseQuestions(text = '') {
   return clean(text).split(/\n(?=\s*\d+[.)]\s)/).map((block) => block.trim()).filter(Boolean).map((block, index) => {
     const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const questionLine = lines.find((line) => !/^\s*[A-D][.)]\s/i.test(line) && !/^answer\s*:/i.test(line)) || `Question ${index + 1}`;
-    const question = questionLine.replace(/^\s*\d+[.)]\s*/, '');
     const choices = lines.filter((line) => /^[A-D][.)]\s/i.test(line)).map((line) => ({ key: line.charAt(0).toUpperCase(), text: line.replace(/^[A-D][.)]\s*/i, '') }));
     const answerLine = lines.find((line) => /^answer\s*:/i.test(line));
-    const answer = answerLine ? (answerLine.match(/answer\s*:\s*([A-D])/i)?.[1] || '').toUpperCase() : '';
-    return { id: `${index + 1}`, question, choices, answer };
+    return { id: `${index + 1}`, question: questionLine.replace(/^\s*\d+[.)]\s*/, ''), choices, answer: answerLine ? (answerLine.match(/answer\s*:\s*([A-D])/i)?.[1] || '').toUpperCase() : '' };
   });
 }
 const shuffle = (items) => [...items].sort(() => Math.random() - 0.5);
@@ -91,29 +81,23 @@ app.get('/api/setup/status', async (_req, res, next) => {
   try { const rows = await db.select({ count: sql`count(*)` }).from(schema.users).where(eq(schema.users.role, 'teacher')); res.json({ teacherExists: Number(rows[0]?.count || 0) > 0 }); }
   catch (error) { next(error); }
 });
-
 app.post('/api/teacher/setup', async (req, res, next) => {
   try {
-    const { bootstrapSecret, fullName, email, phone, username, password, confirmPassword } = req.body || {};
-    if (!process.env.LINGUORA_BOOTSTRAP_SECRET || clean(bootstrapSecret) !== process.env.LINGUORA_BOOTSTRAP_SECRET) return res.status(403).json({ error: 'The bootstrap secret is invalid.', code: 'INVALID_BOOTSTRAP' });
+    const { bootstrapSecret, fullName, email, phone, password, confirmPassword } = req.body || {};
+    if (!process.env.LINGUORA_BOOTSTRAP_SECRET || clean(bootstrapSecret) !== process.env.LINGUORA_BOOTSTRAP_SECRET) return res.status(403).json({ error: 'The bootstrap key is invalid.', code: 'INVALID_BOOTSTRAP' });
     const normalizedEmail = normalizeEmail(email);
-    const derivedUsername = clean(username) || normalizedEmail.split('@')[0];
-    if (clean(fullName).length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || clean(phone).length < 7 || !derivedUsername || !validatePassword(password) || password !== confirmPassword) return res.status(400).json({ error: 'Full name, valid email, phone number, matching passwords (8+ characters), and the bootstrap secret are required.', code: 'INVALID_SETUP' });
-    const existingTeacher = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.role, 'teacher')).limit(1);
-    if (existingTeacher.length) return res.status(409).json({ error: 'Teacher setup has already been completed.', code: 'SETUP_COMPLETE' });
-    const inserted = await db.insert(schema.users).values({ role: 'teacher', fullName: clean(fullName), email: normalizedEmail, phone: clean(phone), username: derivedUsername, passwordHash: passwordHash(password), createdAt: now() });
-    const userId = inserted[0].insertId;
-    const user = (await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1))[0];
-    await setSession(res, userId);
+    const username = normalizedEmail.split('@')[0];
+    if (clean(fullName).length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || clean(phone).length < 7 || !validatePassword(password) || password !== confirmPassword) return res.status(400).json({ error: 'Full name, valid email, phone number, matching passwords (8+ characters), and the bootstrap key are required.', code: 'INVALID_SETUP' });
+    if ((await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.role, 'teacher')).limit(1)).length) return res.status(409).json({ error: 'Teacher setup has already been completed.', code: 'SETUP_COMPLETE' });
+    const inserted = await db.insert(schema.users).values({ role: 'teacher', fullName: clean(fullName), email: normalizedEmail, phone: clean(phone), username, passwordHash: passwordHash(password), createdAt: now() });
+    const user = (await db.select().from(schema.users).where(eq(schema.users.id, inserted[0].insertId)).limit(1))[0];
+    await setSession(res, user.id);
     res.status(201).json({ user: sanitizeUser(user), setupComplete: true });
   } catch (error) { next(error); }
 });
-
 async function loginUser(identifier, password) {
-  const normalized = normalizeEmail(identifier);
-  const rows = await db.select().from(schema.users).where(or(eq(schema.users.email, normalized), eq(schema.users.username, clean(identifier)))).limit(1);
-  if (!rows.length || !passwordMatches(password, rows[0].passwordHash)) return null;
-  return rows[0];
+  const rows = await db.select().from(schema.users).where(or(eq(schema.users.email, normalizeEmail(identifier)), eq(schema.users.username, clean(identifier)))).limit(1);
+  return rows.length && passwordMatches(password, rows[0].passwordHash) ? rows[0] : null;
 }
 app.post('/api/auth/login', async (req, res, next) => {
   try { const { identifier, password } = req.body || {}; if (!clean(identifier) || !clean(password)) return res.status(400).json({ error: 'Username/email and password are required.' }); const user = await loginUser(identifier, password); if (!user) return res.status(401).json({ error: 'The username/email or password is incorrect.' }); await setSession(res, user.id); res.json({ user: sanitizeUser(user) }); }
@@ -121,11 +105,10 @@ app.post('/api/auth/login', async (req, res, next) => {
 });
 app.post('/api/auth/logout', async (req, res, next) => { try { await clearSession(req, res); res.json({ ok: true }); } catch (error) { next(error); } });
 app.get('/api/me', async (req, res, next) => { try { const user = await currentUser(req); res.json({ user: user ? sanitizeUser(user) : null }); } catch (error) { next(error); } });
-
 app.post('/api/student/signup', async (req, res, next) => {
   try {
     const { firstName, lastName, email, phone, password } = req.body || {};
-    if (!clean(firstName) || !clean(lastName) || !normalizeEmail(email) || !clean(phone) || !validatePassword(password)) return res.status(400).json({ error: 'First name, last name, email, phone/WhatsApp, and an 8-character password are required.', code: 'INVALID_SIGNUP' });
+    if (!clean(firstName) || !clean(lastName) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email)) || !clean(phone) || !validatePassword(password)) return res.status(400).json({ error: 'First name, last name, valid email, phone/WhatsApp, and an 8-character password are required.', code: 'INVALID_SIGNUP' });
     const inserted = await db.insert(schema.users).values({ role: 'student', fullName: `${clean(firstName)} ${clean(lastName)}`, email: normalizeEmail(email), phone: clean(phone), username: null, passwordHash: passwordHash(password), createdAt: now() });
     const userId = inserted[0].insertId;
     await db.insert(schema.studentProfiles).values({ userId, firstName: clean(firstName), lastName: clean(lastName), whatsapp: clean(phone), createdAt: now() });
@@ -134,23 +117,25 @@ app.post('/api/student/signup', async (req, res, next) => {
     res.status(201).json({ user: sanitizeUser(user) });
   } catch (error) { if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'An account with that email already exists.', code: 'EMAIL_EXISTS' }); next(error); }
 });
-app.post('/api/student/login', async (req, res, next) => { try { const { identifier, password } = req.body || {}; const user = await loginUser(identifier, password); if (!user || user.role !== 'student') return res.status(401).json({ error: 'The student credentials are incorrect.' }); await setSession(res, user.id); res.json({ user: sanitizeUser(user) }); } catch (error) { next(error); } });
+app.post('/api/student/login', async (req, res, next) => { try { const user = await loginUser(req.body?.identifier, req.body?.password); if (!user || user.role !== 'student') return res.status(401).json({ error: 'The student credentials are incorrect.' }); await setSession(res, user.id); res.json({ user: sanitizeUser(user) }); } catch (error) { next(error); } });
 
-app.get('/api/teacher/overview', requireAuth(['teacher']), async (_req, res, next) => {
+app.get('/api/teacher/overview', requireAuth(['teacher']), async (req, res, next) => {
   try {
-    const [students, codes, views, average, lessonRows, completedToday, questionCount, engagementRows] = await Promise.all([
+    const period = [7, 30, 90].includes(Number(req.query.period)) ? Number(req.query.period) : 7;
+    const [students, codes, views, average, lessonsToday, completedToday, questionCount, engagementRows] = await Promise.all([
       db.select({ count: sql`count(*)` }).from(schema.users).where(eq(schema.users.role, 'student')),
-      db.select({ count: sql`count(*)` }).from(schema.accessCodes).where(and(sql`${schema.accessCodes.redeemedBy} IS NULL`, sql`(${schema.accessCodes.expiresAt} IS NULL OR ${schema.accessCodes.expiresAt} > NOW())`)),
-      db.select({ count: sql`count(*)` }).from(schema.lessonViews),
-      db.select({ average: sql`COALESCE(AVG(${schema.quizAttempts.score} / NULLIF(${schema.quizAttempts.total}, 0) * 100), 0)` }).from(schema.quizAttempts).where(eq(schema.quizAttempts.passed, true)),
-      db.select({ count: sql`count(*)` }).from(schema.lessons).where(sql`${schema.lessons.createdAt} >= CURDATE()`),
-      db.select({ count: sql`count(*)` }).from(schema.lessonProgress).where(and(eq(schema.lessonProgress.completed, true), sql`${schema.lessonProgress.completedAt} >= CURDATE()`)),
-      db.select({ count: sql`count(*)` }).from(schema.questionBanks),
-      pool.query('SELECT DATE(viewed_at) AS day, COUNT(*) AS views FROM lesson_views WHERE viewed_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(viewed_at) ORDER BY day'),
+      db.select({ count: sql`count(*)` }).from(schema.accessCodes).where(and(eq(schema.accessCodes.createdBy, req.user.id), sql`${schema.accessCodes.redeemedBy} IS NULL`, sql`(${schema.accessCodes.expiresAt} IS NULL OR ${schema.accessCodes.expiresAt} > NOW())`)),
+      pool.query('SELECT COUNT(*) AS count FROM lesson_views v INNER JOIN lessons l ON l.id = v.lesson_id WHERE l.created_by = ?', [req.user.id]),
+      pool.query('SELECT COALESCE(AVG(q.score / NULLIF(q.total, 0) * 100), 0) AS average FROM quiz_attempts q INNER JOIN lessons l ON l.id = q.lesson_id WHERE l.created_by = ?', [req.user.id]),
+      db.select({ count: sql`count(*)` }).from(schema.lessons).where(and(eq(schema.lessons.createdBy, req.user.id), sql`${schema.lessons.createdAt} >= CURDATE()`)),
+      pool.query('SELECT COUNT(*) AS count FROM lesson_progress p INNER JOIN lessons l ON l.id = p.lesson_id WHERE l.created_by = ? AND p.completed = 1 AND p.completed_at >= CURDATE()', [req.user.id]),
+      pool.query('SELECT COUNT(*) AS count FROM question_banks q INNER JOIN lessons l ON l.id = q.lesson_id WHERE l.created_by = ?', [req.user.id]),
+      pool.query(`SELECT DATE(v.viewed_at) AS day, COUNT(*) AS views FROM lesson_views v INNER JOIN lessons l ON l.id = v.lesson_id WHERE l.created_by = ? AND v.viewed_at >= DATE_SUB(CURDATE(), INTERVAL ${period - 1} DAY) GROUP BY DATE(v.viewed_at) ORDER BY day`, [req.user.id]),
     ]);
-    const engagementMap = new Map((engagementRows[0] || []).map((row) => [String(row.day).slice(0, 10), Number(row.views || 0)]));
-    const engagement = Array.from({ length: 7 }, (_, index) => { const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - (6 - index)); const key = day.toISOString().slice(0, 10); return { label: day.toLocaleDateString('en-US', { weekday: 'short' }), views: engagementMap.get(key) || 0 }; });
-    res.json({ students: Number(students[0]?.count || 0), codes: Number(codes[0]?.count || 0), views: Number(views[0]?.count || 0), average: Math.round(Number(average[0]?.average || 0)), today: { lessons: Number(lessonRows[0]?.count || 0), completed: Number(completedToday[0]?.count || 0), questions: Number(questionCount[0]?.count || 0) }, engagement });
+    const map = new Map((engagementRows[0] || []).map((row) => [String(row.day).slice(0, 10), Number(row.views || 0)]));
+    const engagement = Array.from({ length: period }, (_, index) => { const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - (period - 1 - index)); return { label: period === 7 ? day.toLocaleDateString('en-US', { weekday: 'short' }) : `${day.getDate()}/${day.getMonth() + 1}`, views: map.get(day.toISOString().slice(0, 10)) || 0 }; });
+    const scalar = (result) => Number(result?.[0]?.[0]?.count || result?.[0]?.count || 0);
+    res.json({ students: Number(students[0]?.count || 0), codes: Number(codes[0]?.count || 0), views: scalar(views), average: Math.round(Number(average[0]?.[0]?.average || 0)), today: { lessons: Number(lessonsToday[0]?.count || 0), completed: scalar(completedToday), questions: scalar(questionCount) }, engagement });
   } catch (error) { next(error); }
 });
 app.get('/api/teacher/students', requireAuth(['teacher']), async (_req, res, next) => {
@@ -160,110 +145,101 @@ app.get('/api/teacher/students', requireAuth(['teacher']), async (_req, res, nex
     res.json({ students: data });
   } catch (error) { next(error); }
 });
-app.get('/api/teacher/courses', requireAuth(['teacher']), async (req, res, next) => { try { const rows = await db.select().from(schema.courses).where(eq(schema.courses.createdBy, req.user.id)).orderBy(desc(schema.courses.createdAt)); const courses = await Promise.all(rows.map(async (course) => { const [courseModules, courseLessons] = await Promise.all([db.select().from(schema.modules).where(eq(schema.modules.courseId, course.id)), db.select().from(schema.lessons).where(eq(schema.lessons.courseId, course.id))]); return { ...course, modules: courseModules.map((module) => ({ ...module, lessonCount: courseLessons.filter((lesson) => lesson.moduleId === module.id).length })), lessons: courseLessons, lessonCount: courseLessons.length }; })); res.json({ courses }); } catch (error) { next(error); } });
-
+app.get('/api/teacher/courses', requireAuth(['teacher']), async (req, res, next) => {
+  try {
+    const rows = await db.select().from(schema.courses).where(eq(schema.courses.createdBy, req.user.id)).orderBy(desc(schema.courses.createdAt));
+    const courses = await Promise.all(rows.map(async (course) => {
+      const [modules, lessons] = await Promise.all([db.select().from(schema.modules).where(eq(schema.modules.courseId, course.id)), db.select().from(schema.lessons).where(eq(schema.lessons.courseId, course.id))]);
+      const banks = lessons.length ? await db.select().from(schema.questionBanks).where(inArray(schema.questionBanks.lessonId, lessons.map((lesson) => lesson.id))) : [];
+      return { ...course, modules: modules.map((module) => ({ ...module, lessonCount: lessons.filter((lesson) => lesson.moduleId === module.id).length })), lessons: lessons.map((lesson) => { const bank = banks.find((item) => item.lessonId === lesson.id); return { ...lesson, questionBank: bank ? { id: bank.id, rawText: bank.rawText, questions: bank.questions, questionCount: Array.isArray(bank.questions) ? bank.questions.length : 0 } : null }; }), lessonCount: lessons.length };
+    }));
+    res.json({ courses });
+  } catch (error) { next(error); }
+});
+async function ownedLesson(teacherId, lessonId) { return (await db.select().from(schema.lessons).where(and(eq(schema.lessons.id, lessonId), eq(schema.lessons.createdBy, teacherId))).limit(1))[0]; }
+async function ownedQuestionBank(teacherId, bankId) { const bank = (await db.select().from(schema.questionBanks).where(eq(schema.questionBanks.id, bankId)).limit(1))[0]; if (!bank) return null; const lesson = await ownedLesson(teacherId, bank.lessonId); return lesson ? { bank, lesson } : null; }
+async function upsertQuestions(lessonId, rawText) {
+  const parsed = parseQuestions(rawText);
+  const existing = (await db.select().from(schema.questionBanks).where(eq(schema.questionBanks.lessonId, lessonId)).limit(1))[0];
+  if (existing) await db.update(schema.questionBanks).set({ rawText: clean(rawText), questions: parsed }).where(eq(schema.questionBanks.id, existing.id));
+  else await db.insert(schema.questionBanks).values({ lessonId, rawText: clean(rawText), questions: parsed, createdAt: now() });
+  return parsed;
+}
 app.post('/api/teacher/lessons', requireAuth(['teacher']), async (req, res, next) => {
   try {
     const { courseId, subject = 'spanish', grade = 'الصف الأول الثانوي', unitNumber = 1, title, videoUrl = '', pdfUrl = '', coverUrl = '', rawQuestions = '' } = req.body || {};
     if (!clean(title)) return res.status(400).json({ error: 'Lesson title is required.' });
-    let course;
-    if (courseId) course = (await db.select().from(schema.courses).where(and(eq(schema.courses.id, Number(courseId)), eq(schema.courses.createdBy, req.user.id))).limit(1))[0];
-    if (!course) { course = (await db.select().from(schema.courses).where(and(eq(schema.courses.subject, clean(subject)), eq(schema.courses.grade, clean(grade)), eq(schema.courses.createdBy, req.user.id))).limit(1))[0]; }
+    let course = courseId ? (await db.select().from(schema.courses).where(and(eq(schema.courses.id, Number(courseId)), eq(schema.courses.createdBy, req.user.id))).limit(1))[0] : null;
+    if (!course) course = (await db.select().from(schema.courses).where(and(eq(schema.courses.subject, clean(subject)), eq(schema.courses.grade, clean(grade)), eq(schema.courses.createdBy, req.user.id))).limit(1))[0];
     if (!course) { const created = await db.insert(schema.courses).values({ subject: clean(subject), title: `${clean(subject) === 'english' ? 'English' : 'Spanish'} Path`, grade: clean(grade), createdBy: req.user.id, createdAt: now() }); course = (await db.select().from(schema.courses).where(eq(schema.courses.id, created[0].insertId)).limit(1))[0]; }
     let module = (await db.select().from(schema.modules).where(and(eq(schema.modules.courseId, course.id), eq(schema.modules.unitNumber, Number(unitNumber)))).limit(1))[0];
     if (!module) { const created = await db.insert(schema.modules).values({ courseId: course.id, unitNumber: Number(unitNumber), title: `Unit ${unitNumber}`, createdAt: now() }); module = (await db.select().from(schema.modules).where(eq(schema.modules.id, created[0].insertId)).limit(1))[0]; }
-    const lessonInsert = await db.insert(schema.lessons).values({ courseId: course.id, moduleId: module.id, unitNumber: Number(unitNumber), title: clean(title), videoUrl: clean(videoUrl) || null, pdfUrl: clean(pdfUrl) || null, coverUrl: clean(coverUrl) || null, createdBy: req.user.id, createdAt: now() });
-    const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, lessonInsert[0].insertId)).limit(1))[0];
-    if (clean(rawQuestions)) await db.insert(schema.questionBanks).values({ lessonId: lesson.id, rawText: clean(rawQuestions), questions: parseQuestions(rawQuestions), createdAt: now() });
-    res.status(201).json({ course, module, lesson, questionCount: parseQuestions(rawQuestions).length });
+    const inserted = await db.insert(schema.lessons).values({ courseId: course.id, moduleId: module.id, unitNumber: Number(unitNumber), title: clean(title), videoUrl: clean(videoUrl) || null, pdfUrl: clean(pdfUrl) || null, coverUrl: clean(coverUrl) || null, createdBy: req.user.id, createdAt: now() });
+    const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, inserted[0].insertId)).limit(1))[0];
+    const questions = clean(rawQuestions) ? await upsertQuestions(lesson.id, rawQuestions) : [];
+    res.status(201).json({ course, module, lesson, questionCount: questions.length });
   } catch (error) { next(error); }
+});
+app.put('/api/teacher/lessons/:lessonId', requireAuth(['teacher']), async (req, res, next) => {
+  try {
+    const lessonId = Number(req.params.lessonId); const lesson = await ownedLesson(req.user.id, lessonId);
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found.' });
+    const patch = {}; for (const field of ['title', 'videoUrl', 'pdfUrl', 'coverUrl']) if (field in (req.body || {})) patch[field] = clean(req.body[field]) || null;
+    if ('unitNumber' in (req.body || {})) patch.unitNumber = Math.max(1, Number(req.body.unitNumber) || lesson.unitNumber);
+    if (Object.keys(patch).length) await db.update(schema.lessons).set(patch).where(eq(schema.lessons.id, lessonId));
+    if ('rawQuestions' in (req.body || {})) await upsertQuestions(lessonId, req.body.rawQuestions);
+    const updated = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, lessonId)).limit(1))[0];
+    res.json({ lesson: updated });
+  } catch (error) { next(error); }
+});
+app.delete('/api/teacher/lessons/:lessonId', requireAuth(['teacher']), async (req, res, next) => {
+  try {
+    const lessonId = Number(req.params.lessonId); const lesson = await ownedLesson(req.user.id, lessonId);
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found.' });
+    await db.delete(schema.questionBanks).where(eq(schema.questionBanks.lessonId, lessonId));
+    await db.delete(schema.lessonViews).where(eq(schema.lessonViews.lessonId, lessonId));
+    await db.delete(schema.lessonProgress).where(eq(schema.lessonProgress.lessonId, lessonId));
+    await db.delete(schema.quizAttempts).where(eq(schema.quizAttempts.lessonId, lessonId));
+    await db.delete(schema.lessons).where(eq(schema.lessons.id, lessonId));
+    res.json({ ok: true, deletedLessonId: lessonId });
+  } catch (error) { next(error); }
+});
+app.put('/api/teacher/question-banks/:questionBankId', requireAuth(['teacher']), async (req, res, next) => {
+  try { const owned = await ownedQuestionBank(req.user.id, Number(req.params.questionBankId)); if (!owned) return res.status(404).json({ error: 'Question bank not found.' }); if (!clean(req.body?.rawText)) return res.status(400).json({ error: 'Question text is required.' }); const questions = parseQuestions(req.body.rawText); await db.update(schema.questionBanks).set({ rawText: clean(req.body.rawText), questions }).where(eq(schema.questionBanks.id, owned.bank.id)); res.json({ ok: true, questionBank: { id: owned.bank.id, rawText: clean(req.body.rawText), questions, questionCount: questions.length } }); }
+  catch (error) { next(error); }
+});
+app.delete('/api/teacher/question-banks/:questionBankId', requireAuth(['teacher']), async (req, res, next) => {
+  try { const owned = await ownedQuestionBank(req.user.id, Number(req.params.questionBankId)); if (!owned) return res.status(404).json({ error: 'Question bank not found.' }); await db.delete(schema.questionBanks).where(eq(schema.questionBanks.id, owned.bank.id)); res.json({ ok: true, deletedQuestionBankId: owned.bank.id }); }
+  catch (error) { next(error); }
 });
 app.post('/api/teacher/access-codes', requireAuth(['teacher']), async (req, res, next) => {
   try {
     const { targetSubject = '', targetGrade = '', unlockScope = 'specific', courseIds = [], moduleIds = [], duration = '30' } = req.body || {};
-    const normalizedCourseIds = [...new Set((Array.isArray(courseIds) ? courseIds : []).map(Number).filter(Boolean))];
-    const normalizedModuleIds = [...new Set((Array.isArray(moduleIds) ? moduleIds : []).map(Number).filter(Boolean))];
+    const normalizedCourseIds = [...new Set((Array.isArray(courseIds) ? courseIds : []).map(Number).filter(Boolean))]; const normalizedModuleIds = [...new Set((Array.isArray(moduleIds) ? moduleIds : []).map(Number).filter(Boolean))];
     if (!clean(targetSubject) || !clean(targetGrade)) return res.status(400).json({ error: 'Target subject and grade are required.' });
     if (unlockScope === 'specific' && !normalizedCourseIds.length && !normalizedModuleIds.length) return res.status(400).json({ error: 'Select at least one course or module to unlock.' });
-    const ownedCourses = await db.select().from(schema.courses).where(eq(schema.courses.createdBy, req.user.id));
-    const ownedCourseIds = new Set(ownedCourses.filter((course) => course.subject === clean(targetSubject) && course.grade === clean(targetGrade)).map((course) => course.id));
+    const ownedCourses = await db.select().from(schema.courses).where(eq(schema.courses.createdBy, req.user.id)); const ownedCourseIds = new Set(ownedCourses.filter((course) => course.subject === clean(targetSubject) && course.grade === clean(targetGrade)).map((course) => course.id));
     if (unlockScope === 'all' && !ownedCourseIds.size) return res.status(400).json({ error: 'No course content exists for that subject and grade yet.' });
-    const validCourseIds = normalizedCourseIds.filter((id) => ownedCourseIds.has(id));
-    const validModules = normalizedModuleIds.length ? (await db.select().from(schema.modules).where(inArray(schema.modules.id, normalizedModuleIds))).filter((module) => ownedCourseIds.has(module.courseId)) : [];
+    const validCourseIds = normalizedCourseIds.filter((id) => ownedCourseIds.has(id)); const validModules = normalizedModuleIds.length ? (await db.select().from(schema.modules).where(inArray(schema.modules.id, normalizedModuleIds))).filter((module) => ownedCourseIds.has(module.courseId)) : [];
     if (unlockScope === 'specific' && !validCourseIds.length && !validModules.length) return res.status(400).json({ error: 'The selected courses or modules are not owned by this teacher.' });
-    const durationDays = { '7': 7, '30': 30, '90': 90, '365': 365 }[String(duration)] || 30;
-    const expiresAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
-    const anchorCourseId = unlockScope === 'all' ? [...ownedCourseIds][0] : (validCourseIds[0] || validModules[0]?.courseId);
-    const code = `LNG-${crypto.randomBytes(3).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const durationDays = { '7': 7, '30': 30, '90': 90, '365': 365 }[String(duration)] || 30; const expiresAt = new Date(Date.now() + durationDays * 86400000); const anchorCourseId = unlockScope === 'all' ? [...ownedCourseIds][0] : (validCourseIds[0] || validModules[0]?.courseId); const code = `LNG-${crypto.randomBytes(3).toString('hex').toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
     await db.insert(schema.accessCodes).values({ code, courseId: anchorCourseId, createdBy: req.user.id, targetSubject: clean(targetSubject), targetGrade: clean(targetGrade), unlockScope, targetCourseIds: unlockScope === 'all' ? [...ownedCourseIds] : validCourseIds, targetModuleIds: validModules.map((module) => module.id), expiresAt, createdAt: now() });
     res.status(201).json({ code, targetSubject: clean(targetSubject), targetGrade: clean(targetGrade), unlockScope, courseIds: unlockScope === 'all' ? [...ownedCourseIds] : validCourseIds, moduleIds: validModules.map((module) => module.id), expiresAt });
   } catch (error) { next(error); }
 });
-app.get('/api/teacher/access-codes', requireAuth(['teacher']), async (req, res, next) => { try { const rows = await db.select().from(schema.accessCodes).where(eq(schema.accessCodes.createdBy, req.user.id)).orderBy(desc(schema.accessCodes.createdAt)); const current = Date.now(); const codes = rows.map((code) => ({ ...code, targetCourseIds: code.targetCourseIds || [], targetModuleIds: code.targetModuleIds || [], status: code.expiresAt && new Date(code.expiresAt).getTime() <= current ? 'expired' : code.redeemedBy ? 'redeemed' : 'active' })); res.json({ codes }); } catch (error) { next(error); } });
-
+app.get('/api/teacher/access-codes', requireAuth(['teacher']), async (req, res, next) => { try { const rows = await db.select().from(schema.accessCodes).where(eq(schema.accessCodes.createdBy, req.user.id)).orderBy(desc(schema.accessCodes.createdAt)); const current = Date.now(); res.json({ codes: rows.map((code) => ({ ...code, targetCourseIds: code.targetCourseIds || [], targetModuleIds: code.targetModuleIds || [], status: code.expiresAt && new Date(code.expiresAt).getTime() <= current ? 'expired' : code.redeemedBy ? 'redeemed' : 'active' })) }); } catch (error) { next(error); } });
 async function studentEnrollment(userId, courseId) { return (await db.select().from(schema.enrollments).where(and(eq(schema.enrollments.userId, userId), eq(schema.enrollments.courseId, courseId))).limit(1)).length > 0; }
-async function studentHasLessonAccess(userId, lesson) { const rows = await db.select().from(schema.entitlements).where(and(eq(schema.entitlements.userId, userId), eq(schema.entitlements.courseId, lesson.courseId), or(sql`${schema.entitlements.moduleId} IS NULL`, eq(schema.entitlements.moduleId, lesson.moduleId)))).limit(1); return rows.length > 0; }
-app.get('/api/student/content', requireAuth(['student']), async (req, res, next) => {
-  try {
-    const entitlements = await db.select().from(schema.entitlements).where(eq(schema.entitlements.userId, req.user.id));
-    const courseIds = [...new Set(entitlements.map((item) => item.courseId))];
-    if (!courseIds.length) return res.json({ courses: [] });
-    const coursesRows = await db.select().from(schema.courses).where(inArray(schema.courses.id, courseIds));
-    const lessonRows = await db.select().from(schema.lessons).where(inArray(schema.lessons.courseId, courseIds)).orderBy(schema.lessons.unitNumber);
-    const progressRows = await db.select().from(schema.lessonProgress).where(eq(schema.lessonProgress.userId, req.user.id));
-    const visibleLessons = lessonRows.filter((lesson) => entitlements.some((item) => item.courseId === lesson.courseId && (item.moduleId === null || item.moduleId === lesson.moduleId)));
-    res.json({ courses: coursesRows.map((course) => ({ ...course, lessons: visibleLessons.filter((lesson) => lesson.courseId === course.id).map((lesson) => ({ ...lesson, completed: progressRows.some((progress) => progress.lessonId === lesson.id && progress.completed) })) })).filter((course) => course.lessons.length) });
-  } catch (error) { next(error); }
-});
-app.post('/api/student/redeem-code', requireAuth(['student']), async (req, res, next) => {
-  try {
-    const code = clean(req.body?.code).toUpperCase();
-    if (!code) return res.status(400).json({ error: 'Enter an access code.' });
-    const access = (await db.select().from(schema.accessCodes).where(eq(schema.accessCodes.code, code)).limit(1))[0];
-    if (!access) return res.status(404).json({ error: 'That access code was not found.' });
-    if (access.expiresAt && new Date(access.expiresAt).getTime() <= Date.now()) return res.status(410).json({ error: 'That access code has expired.' });
-    if (access.redeemedBy && access.redeemedBy !== req.user.id) return res.status(409).json({ error: 'That access code has already been redeemed.' });
-    let courseIds = Array.isArray(access.targetCourseIds) ? access.targetCourseIds.map(Number) : [];
-    const moduleIds = Array.isArray(access.targetModuleIds) ? access.targetModuleIds.map(Number) : [];
-    if (access.unlockScope === 'all') { courseIds = (await db.select({ id: schema.courses.id }).from(schema.courses).where(and(eq(schema.courses.subject, access.targetSubject), eq(schema.courses.grade, access.targetGrade), eq(schema.courses.createdBy, access.createdBy)))).map((course) => course.id); }
-    if (!courseIds.length && access.courseId) courseIds = [access.courseId];
-    const modules = moduleIds.length ? await db.select().from(schema.modules).where(inArray(schema.modules.id, moduleIds)) : [];
-    const moduleCourseIds = modules.map((module) => module.courseId);
-    const allCourseIds = [...new Set([...courseIds, ...moduleCourseIds])];
-    for (const courseId of allCourseIds) {
-      if (!(await studentEnrollment(req.user.id, courseId))) await db.insert(schema.enrollments).values({ userId: req.user.id, courseId, createdAt: now() });
-      const selectedModules = modules.filter((module) => module.courseId === courseId);
-      const existing = await db.select().from(schema.entitlements).where(and(eq(schema.entitlements.userId, req.user.id), eq(schema.entitlements.courseId, courseId)));
-      if (!selectedModules.length || access.unlockScope === 'all' || (courseIds.includes(courseId) && !moduleIds.length)) { if (!existing.some((item) => item.moduleId === null)) await db.insert(schema.entitlements).values({ userId: req.user.id, courseId, moduleId: null, accessCodeId: access.id, createdAt: now() }); }
-      for (const module of selectedModules) if (!existing.some((item) => item.moduleId === module.id)) await db.insert(schema.entitlements).values({ userId: req.user.id, courseId, moduleId: module.id, accessCodeId: access.id, createdAt: now() });
-    }
-    await db.update(schema.accessCodes).set({ redeemedBy: req.user.id, redeemedAt: now() }).where(eq(schema.accessCodes.id, access.id));
-    res.json({ ok: true, unlocked: true, courseIds: allCourseIds, moduleIds });
-  } catch (error) { next(error); }
-});
-app.post('/api/student/lessons/:lessonId/view', requireAuth(['student']), async (req, res, next) => { try { const lessonId = Number(req.params.lessonId); const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, lessonId)).limit(1))[0]; if (!lesson || !(await studentHasLessonAccess(req.user.id, lesson))) return res.status(403).json({ error: 'Lesson is not unlocked.' }); await db.insert(schema.lessonViews).values({ userId: req.user.id, lessonId, viewedAt: now() }); res.json({ ok: true, viewed: true }); } catch (error) { next(error); } });
+async function studentHasLessonAccess(userId, lesson) { return (await db.select().from(schema.entitlements).where(and(eq(schema.entitlements.userId, userId), eq(schema.entitlements.courseId, lesson.courseId), or(sql`${schema.entitlements.moduleId} IS NULL`, eq(schema.entitlements.moduleId, lesson.moduleId)))).limit(1)).length > 0; }
+app.get('/api/student/content', requireAuth(['student']), async (req, res, next) => { try { const entitlements = await db.select().from(schema.entitlements).where(eq(schema.entitlements.userId, req.user.id)); const courseIds = [...new Set(entitlements.map((item) => item.courseId))]; if (!courseIds.length) return res.json({ courses: [] }); const coursesRows = await db.select().from(schema.courses).where(inArray(schema.courses.id, courseIds)); const lessonRows = await db.select().from(schema.lessons).where(inArray(schema.lessons.courseId, courseIds)).orderBy(schema.lessons.unitNumber); const progressRows = await db.select().from(schema.lessonProgress).where(eq(schema.lessonProgress.userId, req.user.id)); const visibleLessons = lessonRows.filter((lesson) => entitlements.some((item) => item.courseId === lesson.courseId && (item.moduleId === null || item.moduleId === lesson.moduleId))); res.json({ courses: coursesRows.map((course) => ({ ...course, lessons: visibleLessons.filter((lesson) => lesson.courseId === course.id).map((lesson) => ({ ...lesson, completed: progressRows.some((progress) => progress.lessonId === lesson.id && progress.completed) })) })).filter((course) => course.lessons.length) }); } catch (error) { next(error); } });
+app.post('/api/student/redeem-code', requireAuth(['student']), async (req, res, next) => { try { const code = clean(req.body?.code).toUpperCase(); if (!code) return res.status(400).json({ error: 'Enter an access code.' }); const access = (await db.select().from(schema.accessCodes).where(eq(schema.accessCodes.code, code)).limit(1))[0]; if (!access) return res.status(404).json({ error: 'That access code was not found.' }); if (access.expiresAt && new Date(access.expiresAt).getTime() <= Date.now()) return res.status(410).json({ error: 'That access code has expired.' }); if (access.redeemedBy && access.redeemedBy !== req.user.id) return res.status(409).json({ error: 'That access code has already been redeemed.' }); let courseIds = Array.isArray(access.targetCourseIds) ? access.targetCourseIds.map(Number) : []; const moduleIds = Array.isArray(access.targetModuleIds) ? access.targetModuleIds.map(Number) : []; if (access.unlockScope === 'all') courseIds = (await db.select({ id: schema.courses.id }).from(schema.courses).where(and(eq(schema.courses.subject, access.targetSubject), eq(schema.courses.grade, access.targetGrade), eq(schema.courses.createdBy, access.createdBy)))).map((course) => course.id); if (!courseIds.length && access.courseId) courseIds = [access.courseId]; const modules = moduleIds.length ? await db.select().from(schema.modules).where(inArray(schema.modules.id, moduleIds)) : []; const allCourseIds = [...new Set([...courseIds, ...modules.map((module) => module.courseId)])]; for (const courseId of allCourseIds) { if (!(await studentEnrollment(req.user.id, courseId))) await db.insert(schema.enrollments).values({ userId: req.user.id, courseId, createdAt: now() }); const selectedModules = modules.filter((module) => module.courseId === courseId); const existing = await db.select().from(schema.entitlements).where(and(eq(schema.entitlements.userId, req.user.id), eq(schema.entitlements.courseId, courseId))); if (!selectedModules.length || access.unlockScope === 'all' || (courseIds.includes(courseId) && !moduleIds.length)) { if (!existing.some((item) => item.moduleId === null)) await db.insert(schema.entitlements).values({ userId: req.user.id, courseId, moduleId: null, accessCodeId: access.id, createdAt: now() }); } for (const module of selectedModules) if (!existing.some((item) => item.moduleId === module.id)) await db.insert(schema.entitlements).values({ userId: req.user.id, courseId, moduleId: module.id, accessCodeId: access.id, createdAt: now() }); } await db.update(schema.accessCodes).set({ redeemedBy: req.user.id, redeemedAt: now() }).where(eq(schema.accessCodes.id, access.id)); res.json({ ok: true, unlocked: true, courseIds: allCourseIds, moduleIds }); } catch (error) { next(error); } });
+app.post('/api/student/lessons/:lessonId/view', requireAuth(['student']), async (req, res, next) => { try { const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, Number(req.params.lessonId))).limit(1))[0]; if (!lesson || !(await studentHasLessonAccess(req.user.id, lesson))) return res.status(403).json({ error: 'Lesson is not unlocked.' }); await db.insert(schema.lessonViews).values({ userId: req.user.id, lessonId: lesson.id, viewedAt: now() }); res.json({ ok: true, viewed: true }); } catch (error) { next(error); } });
 app.post('/api/student/lessons/:lessonId/complete', requireAuth(['student']), async (req, res, next) => { try { const lessonId = Number(req.params.lessonId); const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, lessonId)).limit(1))[0]; if (!lesson || !(await studentHasLessonAccess(req.user.id, lesson))) return res.status(403).json({ error: 'Lesson is not unlocked.' }); const existing = (await db.select().from(schema.lessonProgress).where(and(eq(schema.lessonProgress.userId, req.user.id), eq(schema.lessonProgress.lessonId, lessonId))).limit(1))[0]; if (existing) await db.update(schema.lessonProgress).set({ completed: true, completedAt: now() }).where(eq(schema.lessonProgress.id, existing.id)); else await db.insert(schema.lessonProgress).values({ userId: req.user.id, lessonId, completed: true, completedAt: now() }); res.json({ ok: true, completed: true }); } catch (error) { next(error); } });
 app.get('/api/student/quiz/:lessonId/start', requireAuth(['student']), async (req, res, next) => { try { const lessonId = Number(req.params.lessonId); const lesson = (await db.select().from(schema.lessons).where(eq(schema.lessons.id, lessonId)).limit(1))[0]; if (!lesson || !(await studentHasLessonAccess(req.user.id, lesson))) return res.status(403).json({ error: 'Lesson is not unlocked.' }); const bank = (await db.select().from(schema.questionBanks).where(eq(schema.questionBanks.lessonId, lessonId)).limit(1))[0]; const all = Array.isArray(bank?.questions) ? bank.questions : []; const subset = shuffle(all).slice(0, Math.min(5, all.length)); const inserted = await db.insert(schema.quizAttempts).values({ userId: req.user.id, lessonId, score: 0, total: subset.length, passed: false, quizData: subset, createdAt: now() }); res.json({ attemptId: inserted[0].insertId, lessonId, questions: subset.map(publicQuestion), total: subset.length }); } catch (error) { next(error); } });
-app.post('/api/student/quiz/:attemptId/submit', requireAuth(['student']), async (req, res, next) => { try { const attemptId = Number(req.params.attemptId); const attempt = (await db.select().from(schema.quizAttempts).where(and(eq(schema.quizAttempts.id, attemptId), eq(schema.quizAttempts.userId, req.user.id))).limit(1))[0]; if (!attempt) return res.status(404).json({ error: 'Quiz attempt not found.' }); const answers = req.body?.answers || {}; const questions = Array.isArray(attempt.quizData) ? attempt.quizData : []; const score = questions.reduce((sum, question) => sum + (String(answers[question.id] || '').toUpperCase() === String(question.answer || '').toUpperCase() ? 1 : 0), 0); const passed = questions.length > 0 && score === questions.length; await db.update(schema.quizAttempts).set({ score, total: questions.length, passed }).where(eq(schema.quizAttempts.id, attemptId)); res.json({ score, total: questions.length, passed, certificateAvailable: passed }); } catch (error) { next(error); } });
+app.post('/api/student/quiz/:attemptId/submit', requireAuth(['student']), async (req, res, next) => { try { const attempt = (await db.select().from(schema.quizAttempts).where(and(eq(schema.quizAttempts.id, Number(req.params.attemptId)), eq(schema.quizAttempts.userId, req.user.id))).limit(1))[0]; if (!attempt) return res.status(404).json({ error: 'Quiz attempt not found.' }); const questions = Array.isArray(attempt.quizData) ? attempt.quizData : []; const answers = req.body?.answers || {}; const score = questions.reduce((sum, question) => sum + (String(answers[question.id] || '').toUpperCase() === String(question.answer || '').toUpperCase() ? 1 : 0), 0); const passed = questions.length > 0 && score === questions.length; await db.update(schema.quizAttempts).set({ score, total: questions.length, passed }).where(eq(schema.quizAttempts.id, attempt.id)); res.json({ score, total: questions.length, passed, certificateAvailable: passed }); } catch (error) { next(error); } });
+function pdfCertificate(name, courseTitle) { const escapePdf = (value) => String(value).replace(/([\\()])/g, '\\$1'); const body = `BT /F1 25 Tf 78 680 Td (${escapePdf('LINGUAEDU')}) Tj /F1 36 Tf 0 -80 Td (${escapePdf('Certificate of Completion')}) Tj /F1 18 Tf 0 -55 Td (${escapePdf(name)}) Tj /F1 13 Tf 0 -35 Td (${escapePdf(`has completed ${courseTitle}`)}) Tj ET`; const objects = [`<< /Type /Catalog /Pages 2 0 R >>`, `<< /Type /Pages /Kids [3 0 R] /Count 1 >>`, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`, `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`, `<< /Length ${body.length} >>\nstream\n${body}\nendstream`]; let pdf = '%PDF-1.4\n'; const offsets = [0]; objects.forEach((object, index) => { offsets[index + 1] = Buffer.byteLength(pdf); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; }); const xref = Buffer.byteLength(pdf); pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n `).join('\n')}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`; return Buffer.from(pdf, 'binary'); }
+app.get('/api/student/certificate/:courseId', requireAuth(['student']), async (req, res, next) => { try { const courseId = Number(req.params.courseId); if (!(await studentEnrollment(req.user.id, courseId))) return res.status(403).json({ error: 'Course is not unlocked.' }); const lessons = await db.select().from(schema.lessons).where(eq(schema.lessons.courseId, courseId)); const completed = await db.select().from(schema.lessonProgress).where(and(eq(schema.lessonProgress.userId, req.user.id), eq(schema.lessonProgress.completed, true), inArray(schema.lessonProgress.lessonId, lessons.map((lesson) => lesson.id || 0)))); const passed = await db.select().from(schema.quizAttempts).where(and(eq(schema.quizAttempts.userId, req.user.id), eq(schema.quizAttempts.passed, true), inArray(schema.quizAttempts.lessonId, lessons.map((lesson) => lesson.id || 0)))); if (!lessons.length || completed.length < lessons.length || !passed.length) return res.status(409).json({ error: 'Complete every lesson and pass the quiz first.' }); const course = (await db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).limit(1))[0]; res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `attachment; filename="linguaedu-certificate-${courseId}.pdf"`); res.send(pdfCertificate(req.user.fullName, course.title)); } catch (error) { next(error); } });
 
-function pdfCertificate(name, courseTitle) {
-  const escapePdf = (value) => String(value).replace(/([\\()])/g, '\\$1');
-  const body = `BT /F1 25 Tf 78 680 Td (${escapePdf('LINGUORA')}) Tj /F1 36 Tf 0 -80 Td (${escapePdf('Certificate of Completion')}) Tj /F1 18 Tf 0 -55 Td (${escapePdf(name)}) Tj /F1 13 Tf 0 -35 Td (${escapePdf(`has completed ${courseTitle}`)}) Tj /F1 10 Tf 0 -55 Td (${escapePdf(`Issued ${new Date().toLocaleDateString('en-GB')}`)}) Tj ET`;
-  const objects = [`<< /Type /Catalog /Pages 2 0 R >>`, `<< /Type /Pages /Kids [3 0 R] /Count 1 >>`, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`, `<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`, `<< /Length ${body.length} >>\nstream\n${body}\nendstream`];
-  let pdf = '%PDF-1.4\n'; const offsets = [0]; objects.forEach((object, index) => { offsets[index + 1] = Buffer.byteLength(pdf); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; }); const xref = Buffer.byteLength(pdf); pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => String(offset).padStart(10, '0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`; return Buffer.from(pdf, 'binary');
-}
-app.get('/api/student/certificate/:courseId', requireAuth(['student']), async (req, res, next) => { try { const courseId = Number(req.params.courseId); if (!(await studentEnrollment(req.user.id, courseId))) return res.status(403).json({ error: 'Course is not unlocked.' }); const courseLessons = await db.select().from(schema.lessons).where(eq(schema.lessons.courseId, courseId)); if (!courseLessons.length) return res.status(409).json({ error: 'Complete every lesson and pass the quiz first.' }); const completed = await db.select().from(schema.lessonProgress).where(and(eq(schema.lessonProgress.userId, req.user.id), eq(schema.lessonProgress.completed, true), inArray(schema.lessonProgress.lessonId, courseLessons.map((lesson) => lesson.id || 0)))); const passed = await db.select().from(schema.quizAttempts).where(and(eq(schema.quizAttempts.userId, req.user.id), eq(schema.quizAttempts.passed, true), inArray(schema.quizAttempts.lessonId, courseLessons.map((lesson) => lesson.id || 0)))); if (!courseLessons.length || completed.length < courseLessons.length || !passed.length) return res.status(409).json({ error: 'Complete every lesson and pass the quiz first.' }); const course = (await db.select().from(schema.courses).where(eq(schema.courses.id, courseId)).limit(1))[0]; const pdf = pdfCertificate(req.user.fullName, course.title); res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `attachment; filename="linguora-certificate-${courseId}.pdf"`); res.send(pdf); } catch (error) { next(error); } });
-
-app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ error: 'Server error', detail: isProduction ? undefined : error.message }); });
 app.get('/_app/health', (_req, res) => res.status(200).json({ ok: true }));
-
-if (isProduction) {
-  const dist = path.resolve(process.cwd(), 'dist');
-  app.use(express.static(dist));
-  app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
-} else {
-  const vite = await createViteServer({ server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa' });
-  app.use(vite.middlewares);
-}
-
-app.listen(port, '0.0.0.0', () => console.log(`Linguora server listening on ${port} (${isProduction ? 'production' : 'development'})`));
+app.use((error, _req, res, _next) => { console.error(error); res.status(500).json({ error: 'Server error', detail: isProduction ? undefined : error.message }); });
+if (isProduction) { const dist = path.resolve(process.cwd(), 'dist'); app.use(express.static(dist)); app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html'))); } else { const vite = await createViteServer({ server: { middlewareMode: true, host: '0.0.0.0' }, appType: 'spa' }); app.use(vite.middlewares); }
+app.listen(port, '0.0.0.0', () => console.log(`LinguaEdu server listening on ${port} (${isProduction ? 'production' : 'development'})`));
