@@ -1,0 +1,10 @@
+{
+  "routes": [
+    { "path": "/", "title": "Linguora Language Learning" },
+    { "path": "/teacher/setup", "title": "Teacher Setup" },
+    { "path": "/teacher/login", "title": "Teacher Login" },
+    { "path": "/student/signup", "title": "Student Signup" },
+    { "path": "/student/login", "title": "Student Login" },
+    { "path": "/student", "title": "Student Dashboard" }
+  ]
+}
