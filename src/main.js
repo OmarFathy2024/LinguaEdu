@@ -1,9 +1,10 @@
 import './styles.css';
 import { initPhase3 } from './phase3.js';
+import { applyDocumentLanguage, getSavedLanguage, languageButtonLabel, nextLanguage, persistLanguage } from './i18n.js';
 
 const state = {
   subject: 'spanish',
-  uiLanguage: 'en',
+  uiLanguage: getSavedLanguage(),
   flashIndex: 0,
   flashFlipped: false,
   videoPlaying: false,
@@ -50,12 +51,26 @@ const copy = {
   },
 };
 
+copy.es = {
+  ...copy.en,
+  navMethod: 'Nuestro método', navCourses: 'Cursos', navPricing: 'Precios', navFaq: 'Preguntas frecuentes',
+  heroEyebrow: 'Una forma más amable de alcanzar la fluidez', heroTitleOne: 'El mundo suena', heroTitleEm: 'mejor', heroTitleTwo: 'en otro idioma.',
+  studentPortal: 'Acceso del estudiante', teacherPortal: 'Acceso del profesor', heroProof: 'Elegido por estudiantes curiosos en 42 países',
+  todayLesson: 'LECCIÓN DE HOY', onTrack: 'En camino', lessonMeta: '7 min para escuchar y hablar', lessonFoot: 'Tu ritmo es real.', noteLabel: 'VOCABULARIO NUEVO', streakLabel: 'RACHA ACTUAL', days: 'días',
+  methodKicker: 'EL MÉTODO LINGUORA', methodTitle: 'Útil primero.<br /><em>Siempre hermoso.</em>', methodCopy: 'Sin ruido de juegos ni ejercicios incómodos. Solo un ritmo pensado de escuchar, hablar y notar los detalles que hacen que un idioma cobre vida.',
+  exploreLessons: 'Explorar lecciones', tryPractice: 'Probar una práctica', seePlans: 'Ver planes', courseKicker: 'TU CURSO EN MOVIMIENTO', courseTitle: 'Unos minutos.<br /><em>Un mundo más amplio.</em>', lessonType: 'ESCUCHA + OBSERVA', pathLabel: 'TU RUTA', courseProgress: 'Progreso del curso', continueLesson: 'Continuar la lección',
+  flashKicker: 'EL GIRO DIARIO', flashTitle: 'Haz espacio para<br /><em>una palabra más.</em>', flashCopy: 'Un pequeño ritual para los momentos intermedios. Dale la vuelta, dilo en voz alta y deja que se quede.', sessionLabel: 'SESIÓN DE HOY', flashHint: 'toca para revelar', meaningLabel: 'SIGNIFICADO', flipHint: 'o haz clic para girar',
+  pricingKicker: 'UN PLAN QUE SE PARECE A TI', pricingTitle: 'Mantén tu<br /><em>curiosidad cerca.</em>', pricingCopy: 'Empieza con calma y avanza cuando estés listo.', startFree: 'Empezar gratis', tryMonth: 'Probar un mes', chooseYear: 'Elegir anual', faqKicker: 'ALGUNAS BUENAS PREGUNTAS', faqTitle: '¿Te preguntas<br /><em>en voz alta?</em>', startLearning: 'Empezar a aprender',
+  portalLabel: 'PORTAL DEL PROFESOR', loginTitle: 'Bienvenido de nuevo,<br /><em>profesor.</em>', loginCopy: 'Tu aula te espera.', usernameLabel: 'Usuario', passwordLabel: 'Contraseña', loginButton: 'Entrar al portal', modalNote: 'Sesión segura · preferencias persistentes', usernameRequired: 'Introduce tu usuario para continuar.', passwordRequired: 'Introduce tu contraseña para continuar.', toastStudent: 'Portal del estudiante seleccionado.', toastContinue: 'Lección reanudada.'
+};
 const subjects = {
   spanish: {
     pulse: 'Spanish path', level: 'A2 / 12 WEEKS', title: 'The long way home', description: 'Build the kind of Spanish that carries you through a long lunch, a new neighborhood, and the unexpected.', language: 'ESPAÑOL', accent: '#e8755f', lessons: [{ label: 'The art of the hello', meta: 'Listen · 06 min', done: true }, { label: 'Ordering with confidence', meta: 'Speak · 07 min', active: true }, { label: 'A table for the unexpected', meta: 'Notice · 08 min' }], flash: [{ front: 'la sobremesa', back: 'the conversation that lingers after a meal', example: '“Nos quedamos de sobremesa hasta las seis.”' }, { front: 'qué guay', back: 'how cool / lovely', example: '“¡Qué guay este lugar!”' }, { front: 'a gusto', back: 'comfortable, at ease', example: '“Aquí me siento a gusto.”' }, { front: 'madrugar', back: 'to wake up early', example: '“Mañana toca madrugar.”' }, { front: 'aprovechar', back: 'to make the most of', example: '“Vamos a aprovechar el día.”' }], video: 'The long way home', caption: 'A walk through<br /><strong>Valencia</strong>'
   },
   english: {
     pulse: 'English path', level: 'B1 / 12 WEEKS', title: 'The room between words', description: 'Build the kind of English that lets you join the table, catch the nuance, and say what you really mean.', language: 'ENGLISH', accent: '#2f6f64', lessons: [{ label: 'A softer kind of hello', meta: 'Listen · 06 min', done: true }, { label: 'Say what you mean', meta: 'Speak · 07 min', active: true }, { label: 'The small talk detour', meta: 'Notice · 08 min' }], flash: [{ front: 'serendipity', back: 'a happy accident; a lucky discovery', example: '“We met by serendipity.”' }, { front: 'to linger', back: 'to stay a little longer', example: '“Let the conversation linger.”' }, { front: 'low-key', back: 'quietly; without drawing attention', example: '“I’m low-key excited.”' }, { front: 'to wander', back: 'to walk without a fixed plan', example: '“We wandered through the market.”' }, { front: 'at ease', back: 'relaxed and comfortable', example: '“You can be completely at ease.”' }], video: 'The room between words', caption: 'A walk through<br /><strong>London</strong>'
+  },
+  arabic: { pulse: 'Arabic path', level: 'A1 / 12 WEEKS', title: 'The language of connection', description: 'Build clear, confident Arabic for school, conversation, and the moments that bring people closer.', language: 'العربية', accent: '#bc8b3d', lessons: [{ label: 'A first greeting', meta: 'Listen · 06 min', done: true }, { label: 'Build a clear sentence', meta: 'Speak · 07 min', active: true }, { label: 'Words that connect', meta: 'Notice · 08 min' }], flash: [{ front: 'مرحبا', back: 'hello', example: '“مرحبا، كيف حالك؟”' }, { front: 'شكراً', back: 'thank you', example: '“شكراً على مساعدتك.”' }, { front: 'أهلاً وسهلاً', back: 'welcome', example: '“أهلاً وسهلاً بكم.”' }, { front: 'مدرسة', back: 'school', example: '“أذهب إلى المدرسة.”' }, { front: 'صديق', back: 'friend', example: '“هو صديقي.”' }], video: 'The language of connection', caption: 'A walk through<br /><strong>Cairo</strong>'
   }
 };
 
@@ -68,9 +83,19 @@ const localizedSubjects = {
     en: { pulse: 'English path', level: 'B1 / 12 WEEKS', title: 'The room between words', description: 'Build the kind of English that lets you join the table, catch the nuance, and say what you really mean.', video: 'The room between words', caption: 'A walk through<br /><strong>London</strong>', lessons: [['A softer kind of hello', 'Listen · 06 min'], ['Say what you mean', 'Speak · 07 min'], ['The small talk detour', 'Notice · 08 min']] },
     ar: { pulse: 'مسار الإنجليزية', level: 'B1 / ١٢ أسبوعاً', title: 'المساحة بين الكلمات', description: 'ابنِ إنجليزية تتيح لك الانضمام إلى الطاولة، والتقاط المعنى، وقول ما تعنيه حقاً.', video: 'المساحة بين الكلمات', caption: 'جولة في<br /><strong>لندن</strong>', lessons: [['تحية ألطف', 'استمع · ٠٦ دقائق'], ['قل ما تعنيه', 'تحدث · ٠٧ دقائق'], ['جولة الحديث الخفيف', 'لاحظ · ٠٨ دقائق']] },
   },
+  arabic: {
+    en: { pulse: 'Arabic path', level: 'A1 / 12 WEEKS', title: 'The language of connection', description: 'Build clear, confident Arabic for school, conversation, and the moments that bring people closer.', video: 'The language of connection', caption: 'A walk through<br /><strong>Cairo</strong>', lessons: [['A first greeting', 'Listen · 06 min'], ['Build a clear sentence', 'Speak · 07 min'], ['Words that connect', 'Notice · 08 min']] },
+    es: { pulse: 'Ruta de árabe', level: 'A1 / 12 SEMANAS', title: 'El idioma de la conexión', description: 'Construye un árabe claro y seguro para la escuela y la conversación.', video: 'El idioma de la conexión', caption: 'Un paseo por<br /><strong>El Cairo</strong>', lessons: [['Un primer saludo', 'Escucha · 06 min'], ['Construye una frase', 'Habla · 07 min'], ['Palabras que conectan', 'Observa · 08 min']] },
+    ar: { pulse: 'مسار العربية', level: 'A1 / ١٢ أسبوعاً', title: 'لغة التواصل', description: 'ابنِ عربية واضحة وواثقة للمدرسة والمحادثة واللحظات التي تقرّب الناس.', video: 'لغة التواصل', caption: 'جولة في<br /><strong>القاهرة</strong>', lessons: [['تحية أولى', 'استمع · ٠٦ دقائق'], ['كوّن جملة واضحة', 'تحدث · ٠٧ دقائق'], ['كلمات تصلنا', 'لاحظ · ٠٨ دقائق']] },
+  },
 };
 
 const localizedFlash = {
+  arabic: {
+    en: [{ back: 'the language of connection', example: '“Marhaba” means hello.' }, { back: 'thank you', example: '“Shukran” is a warm thank you.' }, { back: 'welcome', example: '“Ahlan wa sahlan” means welcome.' }, { back: 'school', example: '“Madrasa” means school.' }, { back: 'friend', example: '“Sadiq” means friend.' }],
+    es: [{ back: 'el idioma de la conexión', example: '“Marhaba” significa hola.' }, { back: 'gracias', example: '“Shukran” es una forma cálida de dar las gracias.' }, { back: 'bienvenido', example: '“Ahlan wa sahlan” significa bienvenido.' }, { back: 'escuela', example: '“Madrasa” significa escuela.' }, { back: 'amigo', example: '“Sadiq” significa amigo.' }],
+    ar: [{ back: 'لغة التواصل', example: '«مرحبا» تعني تحية.' }, { back: 'شكراً', example: '«شكراً» كلمة امتنان.' }, { back: 'أهلاً وسهلاً', example: 'تقال للترحيب.' }, { back: 'مدرسة', example: '«مدرسة» مكان التعلم.' }, { back: 'صديق', example: '«صديق» شخص قريب منك.' }],
+  },
   spanish: [
     { back: 'الحديث الذي يستمر بعد الوجبة', example: '“بقينا نتحدث بعد الغداء حتى السادسة.”' },
     { back: 'كم هو رائع / جميل', example: '“يا له من مكان رائع!”' },
@@ -96,12 +121,13 @@ const faqData = [
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const currentCopy = () => copy[state.uiLanguage];
+const currentCopy = () => ({ ...copy.en, ...(copy[state.uiLanguage] || {}) });
 
 function applyCopy() {
   const langCopy = currentCopy();
-  document.documentElement.lang = state.uiLanguage === 'ar' ? 'ar' : 'en';
-  document.documentElement.dir = state.uiLanguage === 'ar' ? 'rtl' : 'ltr';
+  applyDocumentLanguage(state.uiLanguage, { persist: false });
+  const languageButton = $('#lang-toggle');
+  if (languageButton) languageButton.textContent = languageButtonLabel(state.uiLanguage);
   $$('[data-i18n]').forEach((el) => {
     const key = el.dataset.i18n;
     if (langCopy[key]) el.innerHTML = langCopy[key];
@@ -110,7 +136,7 @@ function applyCopy() {
 
 function renderLessons() {
   const subject = subjects[state.subject];
-  const localized = localizedSubjects[state.subject][state.uiLanguage];
+  const localized = localizedSubjects[state.subject][state.uiLanguage] || localizedSubjects[state.subject].en;
   $('#subject-pulse-label').textContent = localized.pulse;
   $('#course-level').textContent = localized.level;
   $('#course-title')?.replaceChildren(document.createTextNode(localized.title));
@@ -131,8 +157,8 @@ function renderLessons() {
 function renderFlashcard() {
   const subject = subjects[state.subject];
   const card = subject.flash[state.flashIndex];
-  const localizedCard = state.uiLanguage === 'ar' ? localizedFlash[state.subject][state.flashIndex] : card;
-  $('#flash-language').textContent = subject.language;
+  const localizedCard = localizedFlash[state.subject]?.[state.uiLanguage]?.[state.flashIndex] || (state.uiLanguage === 'ar' ? localizedFlash[state.subject]?.ar?.[state.flashIndex] : card) || card;
+  $('#flash-language').textContent = state.subject === 'arabic' ? 'العربية' : subject.language;
   $('#flash-front').textContent = card.front;
   $('#flash-back').textContent = localizedCard.back;
   $('#flash-example').textContent = localizedCard.example;
@@ -142,7 +168,7 @@ function renderFlashcard() {
 }
 
 function renderFaq() {
-  $('#faq-list').innerHTML = faqData.map((item, index) => { const localized = item[state.uiLanguage]; return `<article class="faq-item ${index === state.faqOpen ? 'is-open' : ''}"><button type="button" class="faq-question" aria-expanded="${index === state.faqOpen}" aria-controls="faq-answer-${index}"><span class="faq-number">0${index + 1}</span><strong>${localized.q}</strong><span class="faq-plus">+</span></button><div class="faq-answer" id="faq-answer-${index}"><p>${localized.a}</p></div></article>`; }).join('');
+  $('#faq-list').innerHTML = faqData.map((item, index) => { const localized = item[state.uiLanguage] || item.en; return `<article class="faq-item ${index === state.faqOpen ? 'is-open' : ''}"><button type="button" class="faq-question" aria-expanded="${index === state.faqOpen}" aria-controls="faq-answer-${index}"><span class="faq-number">0${index + 1}</span><strong>${localized.q}</strong><span class="faq-plus">+</span></button><div class="faq-answer" id="faq-answer-${index}"><p>${localized.a}</p></div></article>`; }).join('');
   $$('.faq-question').forEach((button, index) => button.addEventListener('click', () => {
     state.faqOpen = state.faqOpen === index ? -1 : index;
     renderFaq();
@@ -157,8 +183,10 @@ function setSubject(subject) {
 }
 
 function setLanguage(language) {
-  state.uiLanguage = language;
+  state.uiLanguage = applyDocumentLanguage(language);
   $('#lang-toggle').classList.toggle('is-ar', language === 'ar');
+  $('#lang-toggle').textContent = languageButtonLabel(state.uiLanguage);
+  persistLanguage(state.uiLanguage);
   applyCopy();
   $('#password-toggle').textContent = $('#admin-password').type === 'text' ? (language === 'ar' ? 'إخفاء' : 'Hide') : (language === 'ar' ? 'إظهار' : 'Show');
   renderLessons();
@@ -200,7 +228,7 @@ function updateVideoTimeline() {
 
 function initEvents() {
   $$('.subject-btn').forEach((button) => button.addEventListener('click', () => setSubject(button.dataset.subject)));
-  $('#lang-toggle').addEventListener('click', () => setLanguage(state.uiLanguage === 'en' ? 'ar' : 'en'));
+  $('#lang-toggle').addEventListener('click', () => setLanguage(nextLanguage(state.uiLanguage)));
   $('#menu-toggle').addEventListener('click', () => $('#mobile-nav').classList.toggle('is-open'));
   $$('.mobile-nav a').forEach((link) => link.addEventListener('click', () => $('#mobile-nav').classList.remove('is-open')));
   $$('.teacher-trigger').forEach((button) => button.addEventListener('click', () => toggleModal(true)));
@@ -309,12 +337,11 @@ function initDashboardEvents() {
   $$('[data-dashboard-jump]').forEach((button) => button.addEventListener('click', () => setDashboardTab(button.dataset.dashboardJump)));
   $('#dashboard-logout').addEventListener('click', closeDashboard);
   $$('.graph-filter button').forEach((button) => button.addEventListener('click', () => { $$('.graph-filter button').forEach((item) => item.classList.remove('is-active')); button.classList.add('is-active'); showToast(`${button.textContent} engagement view selected.`); }));
-  $$('input[name="lesson-subject"]').forEach((input) => input.addEventListener('change', () => { $$('.subject-choice').forEach((choice) => choice.classList.toggle('is-selected', choice.querySelector('input').checked)); }));
   $$('[data-video-mode]').forEach((button) => button.addEventListener('click', () => { $$('[data-video-mode]').forEach((item) => item.classList.toggle('is-active', item === button)); $$('[data-video-field]').forEach((field) => field.classList.toggle('is-visible', field.dataset.videoField === button.dataset.videoMode)); }));
   $('#lesson-video-file').addEventListener('change', (event) => { $('#video-file-name').textContent = event.target.files[0]?.name || 'No file selected'; });
   $('#lesson-pdf').addEventListener('change', (event) => { $('#pdf-file-name').textContent = event.target.files[0]?.name || 'Choose a PDF study sheet'; });
   $('#lesson-cover').addEventListener('change', (event) => { const file = event.target.files[0]; const preview = $('#cover-preview'); if (file) { preview.style.backgroundImage = `url(${URL.createObjectURL(file)})`; preview.classList.add('has-image'); preview.innerHTML = ''; } });
-  $('#lesson-form').addEventListener('submit', (event) => { event.preventDefault(); const title = $('#lesson-title').value.trim(); const feedback = $('#lesson-feedback'); if (!title) { feedback.textContent = 'Add a lesson title before saving.'; feedback.className = 'cms-feedback is-error'; $('#lesson-title').focus(); return; } const lesson = { subject: document.querySelector('input[name="lesson-subject"]:checked').value, grade: $('#lesson-grade').value, unit: $('#lesson-unit').value || '—', title, video: $('#lesson-youtube').value || $('#lesson-video-file').files[0]?.name || 'No video attached', pdf: $('#lesson-pdf').files[0]?.name || 'No PDF attached', cover: $('#lesson-cover').files[0]?.name || 'No cover attached' }; dashboardState.lessons.unshift(lesson); feedback.textContent = `“${title}” saved to your local lesson hub.`; feedback.className = 'cms-feedback is-success'; $('[data-metric="views"]').textContent = (8492 + dashboardState.lessons.length * 37).toLocaleString(); setTimeout(() => setDashboardTab('overview'), 900); });
+  $('#lesson-form').addEventListener('submit', (event) => { event.preventDefault(); const title = $('#lesson-title').value.trim(); const feedback = $('#lesson-feedback'); if (!title) { feedback.textContent = 'Add a lesson title before saving.'; feedback.className = 'cms-feedback is-error'; $('#lesson-title').focus(); return; } const lesson = { subject: state.subject, grade: $('#lesson-grade').value, unit: $('#lesson-unit').value || '—', title, video: $('#lesson-youtube').value || $('#lesson-video-file').files[0]?.name || 'No video attached', pdf: $('#lesson-pdf').files[0]?.name || 'No PDF attached', cover: $('#lesson-cover').files[0]?.name || 'No cover attached' }; dashboardState.lessons.unshift(lesson); feedback.textContent = `“${title}” saved to your local lesson hub.`; feedback.className = 'cms-feedback is-success'; $('[data-metric="views"]').textContent = (8492 + dashboardState.lessons.length * 37).toLocaleString(); setTimeout(() => setDashboardTab('overview'), 900); });
   $('#question-source').addEventListener('input', (event) => { $('#question-char-count').textContent = `${event.target.value.length} characters`; });
   window.runQuestionParser = () => { dashboardState.questions = parseQuestionText($('#question-source').value); renderQuestions(); showToast(dashboardState.questions.length ? `${dashboardState.questions.length} questions parsed into a local quiz.` : 'Add a question block to start parsing.'); }; $('#parse-questions').onclick = window.runQuestionParser;
   $('#student-search').addEventListener('input', (event) => renderStudentTable(event.target.value));

@@ -153,3 +153,116 @@ body.dashboard-mode > #app > main, body.dashboard-mode > #app > footer { display
 .content-modal .btn-danger:hover { background: #984c42; }
 .content-modal button:disabled { opacity: .55; cursor: wait; }
 @media (max-width: 620px) { .teacher-library-heading, .teacher-content-card-head, .asset-row { align-items: flex-start; flex-direction: column; }.content-card-actions, .asset-actions { justify-content: start; }.asset-row small { max-width: 290px; }.content-modal { padding: 24px 18px; } }
+
+/* Super admin portal */
+.admin-portal { width: min(1120px, 100%); margin: 7vh auto 0; }
+.admin-intro { max-width: 620px; margin-bottom: 34px; }
+.admin-intro h1 { margin: 25px 0 14px; font-family: Fraunces, serif; font-size: clamp(48px, 7vw, 76px); font-weight: 400; line-height: .92; letter-spacing: -.07em; }
+.admin-intro h1 em { color: var(--coral); font-style: italic; }
+.admin-topline { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:18px; }
+.admin-topline h2, .admin-topline h3 { margin:8px 0 0; font-family: Fraunces, serif; font-weight:400; letter-spacing:-.04em; }
+.admin-topline h2 { font-size:34px; }
+.admin-topline h3 { font-size:25px; }
+.admin-grid { display:grid; grid-template-columns: 1.15fr .85fr; gap:18px; margin-bottom:18px; }
+.admin-card { padding:28px; border:1px solid var(--line); background:#fffdfa; box-shadow:0 20px 50px rgba(31,52,44,.05); }
+.admin-card h3 { margin:10px 0 12px; font-family:Fraunces,serif; font-weight:400; font-size:30px; }
+.admin-copy { color:var(--muted); font-size:13px; line-height:1.8; }
+.admin-rule-list { display:grid; gap:0; margin-top:22px; border-top:1px solid var(--line); }
+.admin-rule-list span { padding:13px 0; border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; }
+.admin-rule-list b { display:inline-block; width:30px; color:var(--coral); font-family:'DM Mono',monospace; font-weight:400; }
+.admin-directory { margin-bottom:60px; }
+.admin-table-wrap { overflow:auto; }
+.admin-table { width:100%; border-collapse:collapse; font-size:11px; }
+.admin-table th { padding:11px 8px; color:#8a9890; text-align:left; font:9px 'DM Mono',monospace; letter-spacing:.08em; text-transform:uppercase; }
+.admin-table td { padding:14px 8px; border-top:1px solid var(--line); white-space:nowrap; }
+.admin-table td:first-child { min-width:220px; white-space:normal; }
+.admin-table td strong, .admin-table td small { display:block; }
+.admin-table td small { margin-top:3px; color:#95a09a; font-size:9px; }
+@media (max-width:760px) { .admin-portal { margin-top:4vh; }.admin-grid { grid-template-columns:1fr; }.admin-card { padding:21px 18px; }.admin-topline { align-items:flex-start; flex-direction:column; }.admin-topline .btn { align-self:stretch; } }
+
+/* Student AI study companion */
+.student-chatbot { position: fixed; right: 26px; bottom: 24px; z-index: 30; }
+.student-chat-toggle { display:flex; align-items:center; gap:10px; min-height:48px; padding:0 15px 0 9px; border:1px solid #496a5f; color:var(--cream); background:var(--ink); box-shadow:0 15px 32px rgba(35,66,56,.24); font-size:11px; font-weight:800; transition:transform .2s var(--ease), background .2s ease; }
+.student-chat-toggle:hover { transform:translateY(-3px); background:#2d584b; }
+.student-chat-toggle b { color:#f2ba7e; font-size:16px; font-weight:400; }
+.chat-spark { display:grid; place-items:center; width:30px; height:30px; color:var(--ink); background:var(--coral); font-size:14px; }
+.student-chat-panel { position:absolute; right:0; bottom:62px; display:flex; flex-direction:column; width:min(380px, calc(100vw - 32px)); height:min(590px, calc(100vh - 110px)); border:1px solid #ced8cf; background:#fffdfa; box-shadow:0 28px 70px rgba(35,66,56,.23); }
+.student-chat-panel[hidden] { display:none; }
+.student-chat-panel header { display:flex; align-items:flex-start; justify-content:space-between; padding:20px 20px 13px; color:var(--cream); background:var(--ink); }
+.student-chat-panel header h3 { margin:6px 0 0; font-family:Fraunces,serif; font-size:25px; font-weight:400; letter-spacing:-.04em; }
+.student-chat-panel header .mini-label { color:#a9c0b2; }
+.student-chat-panel header button { border:0; color:#c9d8cd; background:transparent; font-size:24px; line-height:1; }
+.student-chat-context { display:flex; align-items:center; gap:7px; padding:10px 20px; border-bottom:1px solid var(--line); color:#829088; font:8px 'DM Mono',monospace; letter-spacing:.08em; text-transform:uppercase; }
+.chat-status-dot { width:6px; height:6px; border-radius:50%; background:#8fc291; box-shadow:0 0 0 4px rgba(143,194,145,.13); }
+.chat-powered { margin-left:auto; color:#6b9b72; }
+.student-chat-messages { flex:1; overflow:auto; padding:17px 16px; background:#f7f5f0; }
+.student-chat-message { display:flex; align-items:flex-start; gap:8px; margin:0 0 13px; }
+.student-chat-message.user { flex-direction:row-reverse; }
+.chat-avatar { display:grid; place-items:center; flex:0 0 25px; width:25px; height:25px; color:var(--cream); background:var(--ink); font:8px 'DM Mono',monospace; }
+.student-chat-message.user .chat-avatar { color:var(--ink); background:#f0c58c; }
+.student-chat-message p { max-width:290px; margin:0; padding:10px 12px; border:1px solid #e2e4dc; color:var(--ink); background:#fffdfa; font-size:11px; line-height:1.65; }
+.student-chat-message.user p { border-color:#f2c6ba; background:#fff0ea; }
+.student-chat-message.pending p { color:#87948c; font-style:italic; }
+.student-chat-form { display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:#fffdfa; }
+.student-chat-form textarea { flex:1; resize:none; min-height:43px; padding:10px 11px; border:1px solid #d5ddd5; outline:0; color:var(--ink); background:#fff; font:11px Manrope,sans-serif; }
+.student-chat-form textarea:focus { border-color:var(--coral); box-shadow:0 0 0 3px rgba(232,117,95,.1); }
+.student-chat-form button { width:43px; border:0; color:var(--cream); background:var(--coral); font-size:18px; }
+.student-chat-form button:disabled { opacity:.5; }
+.student-chat-note { padding:0 14px 12px; color:#9aa49d; background:#fffdfa; font-size:8px; text-align:center; }
+@media (max-width:560px) { .student-chatbot { right:16px; bottom:16px; }.student-chat-panel { right:-1px; bottom:60px; height:min(560px, calc(100vh - 95px)); }.student-chat-toggle span:not(.chat-spark) { display:none; }.student-chat-toggle { padding-right:9px; } }
+
+.teacher-subject-selector { border:0; margin:0; padding:0; }
+.teacher-subject-selector legend { margin-bottom:9px; color:#728079; font-size:10px; font-weight:700; }
+.teacher-subject-options { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; }
+.teacher-subject-options label { position:relative; cursor:pointer; }
+.teacher-subject-options input { position:absolute; opacity:0; pointer-events:none; }
+.teacher-subject-options span { display:flex; align-items:center; justify-content:center; min-height:42px; padding:0 6px; border:1px solid var(--line); color:#718078; background:#fffdfa; font-size:10px; text-align:center; transition:all .2s ease; }
+.teacher-subject-options label:hover span { border-color:var(--coral); color:var(--ink); }
+.teacher-subject-options input:checked + span { border-color:var(--coral); color:var(--cream); background:var(--coral); box-shadow:0 5px 12px rgba(232,117,95,.18); }
+@media (max-width:560px) { .teacher-subject-options { grid-template-columns:1fr; } }
+
+.course-library { margin-top: 28px; }
+.teacher-course-card { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 0; border-top:1px solid var(--line); }
+.teacher-course-card h4 { margin:8px 0 4px; font-size:22px; }
+.teacher-course-card small { color:#718078; }
+@media (max-width:620px) { .teacher-course-card { align-items:flex-start; flex-direction:column; } }
+
+
+/* Admin data cleanup */
+.admin-cleanup-panel { margin-top: 20px; }
+.admin-cleanup-panel h3 { margin: 0; }
+.cleanup-warning { color: var(--coral); }
+.cleanup-search-form { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+.cleanup-search-form .text-input { flex: 1; min-width: 0; }
+.admin-cleanup-results { display: grid; gap: 22px; margin-top: 24px; }
+.cleanup-result-group { display: grid; gap: 9px; }
+.cleanup-result-group .mini-label { color: var(--muted); }
+.cleanup-result-group .admin-table-wrap { overflow-x: auto; }
+.cleanup-result-group .admin-table { min-width: 620px; }
+.cleanup-result-group .admin-table small { display: block; color: var(--muted); font-size: 11px; }
+.cleanup-danger-zone { margin-top: 28px; padding: 20px; border: 1px solid rgba(232,117,95,.48); background: rgba(232,117,95,.07); }
+.cleanup-danger-zone .mini-label { color: var(--coral); }
+.cleanup-danger-zone p { max-width: 760px; margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.cleanup-danger-zone code { padding: 2px 4px; color: var(--ink); background: rgba(255,255,255,.65); font-family: 'DM Mono', monospace; font-size: 11px; }
+.btn-danger { color: var(--cream); border-color: var(--coral); background: var(--coral); }
+.btn-danger:hover { color: var(--cream); background: #c95e4d; }
+.asset-button.asset-delete { color: var(--coral); }
+.asset-button.asset-delete:hover { color: #b64e40; }
+@media (max-width: 700px) {
+  .cleanup-search-form { align-items: stretch; flex-direction: column; }
+  .cleanup-search-form .btn { width: 100%; }
+  .cleanup-danger-zone { padding: 16px; }
+}
+
+/* Phase 1 language and Arabic RTL */
+html[dir="rtl"] body { font-family: 'Noto Kufi Arabic', 'Amiri', 'DejaVu Sans', sans-serif; }
+html[dir="rtl"] .main-nav, html[dir="rtl"] .header-actions, html[dir="rtl"] .hero-actions, html[dir="rtl"] .dashboard-topbar, html[dir="rtl"] .student-dashboard-head { direction: rtl; }
+html[dir="rtl"] .wordmark, html[dir="rtl"] .card-link, html[dir="rtl"] .btn, html[dir="rtl"] .text-btn { direction: rtl; }
+html[dir="rtl"] .student-lesson-actions, html[dir="rtl"] .content-modal-actions { flex-direction: row-reverse; }
+html[dir="rtl"] .admin-table, html[dir="rtl"] .student-table, html[dir="rtl"] .code-history-table { direction: rtl; }
+html[dir="rtl"] .phase3-form, html[dir="rtl"] .lesson-form, html[dir="rtl"] .question-bank-grid { direction: rtl; text-align: right; }
+html[dir="rtl"] .phase3-route-shell { direction: rtl; }
+.route-language-toggle { position: absolute; top: 26px; inset-inline-end: 30px; z-index: 3; padding: 9px 13px; border: 1px solid var(--line); color: var(--ink); background: rgba(250,248,245,.9); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .08em; cursor: pointer; }
+.tenant-lock-note { margin: 0 0 22px; padding: 12px 14px; border-left: 2px solid var(--coral); color: #65746b; background: #f5f1e9; font-size: 12px; line-height: 1.6; }
+html[dir="rtl"] .tenant-lock-note { border-left: 0; border-right: 2px solid var(--coral); }
+@media (max-width: 700px) { .route-language-toggle { top: 16px; inset-inline-end: 16px; } }

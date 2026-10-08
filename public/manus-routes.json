@@ -1,7 +1,7 @@
 {
   "routes": [
     { "path": "/", "title": "Linguora Language Learning" },
-    { "path": "/teacher/setup", "title": "Teacher Setup" },
+    { "path": "/admin", "title": "Super Admin Portal" },
     { "path": "/teacher/login", "title": "Teacher Login" },
     { "path": "/student/signup", "title": "Student Signup" },
     { "path": "/student/login", "title": "Student Login" },

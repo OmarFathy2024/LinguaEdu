@@ -2,6 +2,13 @@ import { mysqlTable, int, varchar, text, datetime, boolean, json, index, uniqueI
 
 const createdAt = (name = 'created_at') => datetime(name).notNull().default(new Date());
 
+export const tenants = mysqlTable('tenants', {
+  id: int('id').autoincrement().primaryKey(),
+  slug: varchar('slug', { length: 32 }).notNull(),
+  name: varchar('name', { length: 80 }).notNull(),
+  createdAt: datetime('created_at').notNull(),
+}, (table) => ({ slugUnique: uniqueIndex('tenants_slug_unique').on(table.slug) }));
+
 export const users = mysqlTable('users', {
   id: int('id').autoincrement().primaryKey(),
   role: varchar('role', { length: 24 }).notNull(),
@@ -10,6 +17,8 @@ export const users = mysqlTable('users', {
   passwordHash: text('password_hash').notNull(),
   fullName: varchar('full_name', { length: 160 }).notNull(),
   phone: varchar('phone', { length: 50 }).notNull(),
+  tenantId: int('tenant_id'),
+  language: varchar('language', { length: 5 }).notNull().default('en'),
   createdAt: datetime('created_at').notNull(),
 }, (table) => ({
   usernameUnique: uniqueIndex('users_username_unique').on(table.username),
@@ -32,6 +41,7 @@ export const courses = mysqlTable('courses', {
   title: varchar('title', { length: 190 }).notNull(),
   grade: varchar('grade', { length: 120 }).notNull(),
   createdBy: int('created_by').notNull(),
+  tenantId: int('tenant_id'),
   createdAt: datetime('created_at').notNull(),
 });
 
@@ -69,6 +79,7 @@ export const accessCodes = mysqlTable('access_codes', {
   code: varchar('code', { length: 64 }).notNull(),
   courseId: int('course_id').notNull(),
   createdBy: int('created_by').notNull(),
+  tenantId: int('tenant_id'),
   targetSubject: varchar('target_subject', { length: 24 }),
   targetGrade: varchar('target_grade', { length: 120 }),
   unlockScope: varchar('unlock_scope', { length: 16 }),
@@ -99,6 +110,12 @@ export const enrollments = mysqlTable('enrollments', {
 export const sessions = mysqlTable('sessions', {
   id: varchar('id', { length: 128 }).primaryKey(),
   userId: int('user_id').notNull(),
+  expiresAt: datetime('expires_at').notNull(),
+  createdAt: datetime('created_at').notNull(),
+});
+
+export const adminSessions = mysqlTable('admin_sessions', {
+  id: varchar('id', { length: 128 }).primaryKey(),
   expiresAt: datetime('expires_at').notNull(),
   createdAt: datetime('created_at').notNull(),
 });
